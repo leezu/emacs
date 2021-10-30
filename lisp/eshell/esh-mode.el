@@ -315,6 +315,8 @@ and the hook `eshell-exit-hook'."
   (setq-local bookmark-make-record-function #'eshell-bookmark-make-record)
   (setq local-abbrev-table eshell-mode-abbrev-table)
 
+  (setq-local window-point-insertion-type t)
+
   (setq-local list-buffers-directory (expand-file-name default-directory))
 
   ;; always set the tab width to 8 in Eshell buffers, since external
@@ -499,7 +501,7 @@ and the hook `eshell-exit-hook'."
     (yank)))
 
 (defun eshell-bol ()
-  "Goes to the beginning of line, then skips past the prompt, if any."
+  "Go to the beginning of line, then skip past the prompt, if any."
   (interactive)
   (beginning-of-line)
   (and eshell-skip-prompt-function
@@ -696,13 +698,10 @@ This is done after all necessary filtering has been done."
                   (setq oend (+ oend nchars)))
               ;; Let the ansi-color overlay hooks run.
               (let ((inhibit-modification-hooks nil))
-                (insert-before-markers string))
+                (insert string))
               (if (= (window-start) (point))
                   (set-window-start (selected-window)
                                     (- (point) nchars)))
-              (if (= (point) eshell-last-input-end)
-                  (set-marker eshell-last-input-end
-                              (- eshell-last-input-end nchars)))
               (set-marker eshell-last-output-start ostart)
               (set-marker eshell-last-output-end (point))
               (force-mode-line-update))
@@ -940,7 +939,14 @@ This function could be in the list `eshell-output-filter-functions'."
 	(beginning-of-line)
 	(if (re-search-forward eshell-password-prompt-regexp
 			       eshell-last-output-end t)
-	    (eshell-send-invisible))))))
+            ;; Use `run-at-time' in order not to pause execution of
+            ;; the process filter with a minibuffer
+	    (run-at-time
+             0 nil
+             (lambda (current-buf)
+               (with-current-buffer current-buf
+                 (eshell-send-invisible)))
+             (current-buffer)))))))
 
 (custom-add-option 'eshell-output-filter-functions
 		   'eshell-watch-for-password-prompt)
@@ -993,8 +999,6 @@ This function could be in the list `eshell-output-filter-functions'."
 
 ;;; Bookmark support:
 
-(declare-function bookmark-make-record-default
-                  "bookmark" (&optional no-file no-context posn))
 (declare-function bookmark-prop-get "bookmark" (bookmark prop))
 
 (defun eshell-bookmark-name ()

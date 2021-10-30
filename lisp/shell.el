@@ -517,7 +517,8 @@ Shell buffers.  It implements `shell-completion-execonly' for
 (put 'shell-mode 'mode-class 'special)
 
 (define-derived-mode shell-mode comint-mode "Shell"
-  "Major mode for interacting with an inferior shell.\\<shell-mode-map>
+  "Major mode for interacting with an inferior shell.
+\\<shell-mode-map>
 \\[comint-send-input] after the end of the process' output sends the text from
     the end of process to the end of the current line.
 \\[comint-send-input] before end of process output copies the current line minus the prompt to
@@ -765,12 +766,16 @@ Make the shell buffer the current buffer, and return it.
               (called-interactively-p 'any)
               (null explicit-shell-file-name)
               (null (getenv "ESHELL")))
+     ;; `expand-file-name' shall not add the MS Windows volume letter
+     ;; (Bug#49229).
      (setq-local explicit-shell-file-name
-                 (file-local-name
-                  (expand-file-name
-                   (read-file-name "Remote shell path: " default-directory
-                                   shell-file-name t shell-file-name
-                                   #'file-remote-p)))))
+                 (replace-regexp-in-string
+                  "^[[:alpha:]]:" ""
+                  (file-local-name
+                   (expand-file-name
+                    (read-file-name "Remote shell path: " default-directory
+                                    shell-file-name t shell-file-name
+                                    #'file-remote-p))))))
 
    ;; Rain or shine, BUFFER must be current by now.
    (unless (comint-check-proc buffer)
@@ -1199,7 +1204,7 @@ Returns t if successful."
     (if data
 	(prog2 (unless (window-minibuffer-p)
 		 (message "Completing command name..."))
-	    (apply #'completion-in-region data)))))
+            (completion-in-region (nth 0 data) (nth 1 data) (nth 2 data))))))
 
 (defun shell-command-completion ()
   "Return the completion data for the command at point, if any."
@@ -1252,7 +1257,7 @@ Returns t if successful."
     (list
      start end
      (lambda (string pred action)
-       (if (string-match "/" string)
+       (if (string-search "/" string)
            (completion-file-name-table string pred action)
          (complete-with-action action completions string pred)))
      :exit-function
@@ -1314,7 +1319,7 @@ Returns non-nil if successful."
     (if data
 	(prog2 (unless (window-minibuffer-p)
 		 (message "Completing variable name..."))
-	    (apply #'completion-in-region data)))))
+	    (completion-in-region (nth 0 data) (nth 1 data) (nth 2 data))))))
 
 
 (defun shell-environment-variable-completion ()
@@ -1328,7 +1333,7 @@ Returns non-nil if successful."
                 (looking-at "\\$?[({]*")
                 (match-end 0)))
              (variables (mapcar (lambda (x)
-                                  (substring x 0 (string-match "=" x)))
+                                  (substring x 0 (string-search "=" x)))
                                 process-environment))
              (suffix (pcase (char-before start) (?\{ "}") (?\( ")") (_ ""))))
         (list start end variables

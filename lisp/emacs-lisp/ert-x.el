@@ -361,28 +361,29 @@ in the same directory as the test file this is called from.
 
 If that directory doesn't exist, find a directory based on the
 test file name.  If the file is named \"foo-tests.el\", return
-the absolute file name for \"foo-resources\".  If you want a
-different resource directory naming scheme, set the variable
-`ert-resource-directory-format'.  Before formatting, the file
-name will be trimmed using `string-trim' with arguments
+the absolute file name for \"foo-resources\".
+
+If you want a different resource directory naming scheme, set the
+variable `ert-resource-directory-format'.  Before formatting, the
+file name will be trimmed using `string-trim' with arguments
 `ert-resource-directory-trim-left-regexp' and
 `ert-resource-directory-trim-right-regexp'."
-  `(let* ((testfile ,(or (macroexp-file-name)
-                         buffer-file-name))
-          (default-directory (file-name-directory testfile)))
-     (file-truename
-      (if (file-accessible-directory-p "resources/")
-          (expand-file-name "resources/")
-        (expand-file-name
-         (format ert-resource-directory-format
-                 (string-trim testfile
-                              ert-resource-directory-trim-left-regexp
-                              ert-resource-directory-trim-right-regexp)))))))
+  `(when-let ((testfile ,(or (macroexp-file-name)
+                             buffer-file-name)))
+     (let ((default-directory (file-name-directory testfile)))
+       (file-truename
+        (if (file-accessible-directory-p "resources/")
+            (expand-file-name "resources/")
+          (expand-file-name
+           (format ert-resource-directory-format
+                   (string-trim testfile
+                                ert-resource-directory-trim-left-regexp
+                                ert-resource-directory-trim-right-regexp))))))))
 
 (defmacro ert-resource-file (file)
-  "Return file name of resource file named FILE.
-A resource file is in the resource directory as per
-`ert-resource-directory'."
+  "Return absolute file name of resource (test data) file named FILE.
+A resource file is defined as any file placed in the resource
+directory as returned by `ert-resource-directory'."
   `(expand-file-name ,file (ert-resource-directory)))
 
 (provide 'ert-x)

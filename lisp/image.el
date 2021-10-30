@@ -48,6 +48,7 @@ static \\(unsigned \\)?char \\1_bits" . xbm)
     ("\\`\\(?:MM\0\\*\\|II\\*\0\\)" . tiff)
     ("\\`[\t\n\r ]*%!PS" . postscript)
     ("\\`\xff\xd8" . jpeg)    ; used to be (image-jpeg-p . jpeg)
+    ("\\`RIFF....WEBPVP8" . webp)
     (,(let* ((incomment-re "\\(?:[^-]\\|-[^-]\\)")
 	     (comment-re (concat "\\(?:!--" incomment-re "*-->[ \t\r\n]*<\\)")))
 	(concat "\\(?:<\\?xml[ \t\r\n]+[^>]*>\\)?[ \t\r\n]*<"
@@ -67,6 +68,7 @@ a non-nil value, TYPE is the image's type.")
   '(("\\.png\\'" . png)
     ("\\.gif\\'" . gif)
     ("\\.jpe?g\\'" . jpeg)
+    ("\\.webp\\'" . webp)
     ("\\.bmp\\'" . bmp)
     ("\\.xpm\\'" . xpm)
     ("\\.pbm\\'" . pbm)
@@ -92,6 +94,7 @@ be of image type IMAGE-TYPE.")
     (jpeg . maybe)
     (tiff . maybe)
     (svg . maybe)
+    (webp . maybe)
     (postscript . nil))
   "Alist of (IMAGE-TYPE . AUTODETECT) pairs used to auto-detect image files.
 \(See `image-type-auto-detected-p').
@@ -791,7 +794,7 @@ Example:
 
    (defimage test-image ((:type xpm :file \"~/test1.xpm\")
                          (:type xbm :file \"~/test1.xbm\")))"
-  (declare (doc-string 3))
+  (declare (doc-string 3) (indent defun))
   `(defvar ,symbol (find-image ',specs) ,doc))
 
 
@@ -817,7 +820,7 @@ in which case you might want to use `image-default-frame-delay'."
 	(cons images delay)))))
 
 (defun image-animated-p (image)
-  "Like `image-multi-frame-p', but returns nil if no delay is specified."
+  "Like `image-multi-frame-p', but return nil if no delay is specified."
   (let ((multi (image-multi-frame-p image)))
     (and (cdr multi) multi)))
 
@@ -1136,6 +1139,13 @@ default is 20%."
     (unless (eq (car-safe image) 'image)
       (error "No image under point"))
     image))
+
+;;;###autoload
+(defun image-at-point-p ()
+  "Return non-nil if there is an image at point."
+  (condition-case nil
+      (prog1 t (image--get-image))
+    (error nil)))
 
 (defun image--get-imagemagick-and-warn (&optional position)
   (declare-function image-transforms-p "image.c" (&optional frame))

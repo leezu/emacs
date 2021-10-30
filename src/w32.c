@@ -39,6 +39,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include <sys/time.h>
 #include <sys/utime.h>
 #include <math.h>
+#include <nproc.h>
 
 /* Include (most) CRT headers *before* ms-w32.h.  */
 #include <ms-w32.h>
@@ -1962,6 +1963,16 @@ w32_get_nproc (void)
   return num_of_processors;
 }
 
+/* Emulate Gnulib's 'num_processors'.  We cannot use the Gnulib
+   version because it unconditionally calls APIs that aren't available
+   on old MS-Windows versions.  */
+unsigned long
+num_processors (enum nproc_query query)
+{
+  /* We ignore QUERY.  */
+  return w32_get_nproc ();
+}
+
 static void
 sample_system_load (ULONGLONG *idle, ULONGLONG *kernel, ULONGLONG *user)
 {
@@ -2389,8 +2400,13 @@ rand_as183 (void)
 int
 random (void)
 {
-  /* rand_as183 () gives us 15 random bits...hack together 30 bits.  */
+  /* rand_as183 () gives us 15 random bits...hack together 30 bits for
+     Emacs with 32-bit EMACS_INT, and at least 31 bit for wider EMACS_INT.  */
+#if EMACS_INT_MAX > INT_MAX
+  return ((rand_as183 () << 30) | (rand_as183 () << 15) | rand_as183 ());
+#else
   return ((rand_as183 () << 15) | rand_as183 ());
+#endif
 }
 
 void
@@ -8753,7 +8769,7 @@ int
 _sys_read_ahead (int fd)
 {
   child_process * cp;
-  int rc;
+  int rc = 0;
 
   if (fd < 0 || fd >= MAXDESC)
     return STATUS_READ_ERROR;

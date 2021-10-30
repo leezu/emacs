@@ -440,7 +440,8 @@ These have to be run via `sgml-syntax-propertize'"))
 
 ;; internal
 (defvar sgml-face-tag-alist ()
-  "Alist of face and tag name for facemenu.")
+  "Alist of face and tag name for facemenu.
+The tag name can be a string or a list of strings.")
 
 (defvar sgml-tag-face-alist ()
   "Tag names and face or list of faces to fontify with when invisible.
@@ -528,11 +529,13 @@ an optional alist of possible values."
     (comment-indent-new-line soft)))
 
 (defun sgml-mode-facemenu-add-face-function (face _end)
-  (let ((tag-face (cdr (assq face sgml-face-tag-alist))))
+  "Add \"face\" tags with `facemenu-keymap' commands."
+  (let ((tag-face (ensure-list (cdr (assq face sgml-face-tag-alist)))))
     (cond (tag-face
 	   (setq tag-face (funcall skeleton-transformation-function tag-face))
-	   (setq facemenu-end-add-face (concat "</" tag-face ">"))
-	   (concat "<" tag-face ">"))
+           (setq facemenu-end-add-face
+                 (mapconcat (lambda (f) (concat "</" f ">")) (reverse tag-face) ""))
+           (mapconcat (lambda (f) (concat "<" f ">")) tag-face ""))
 	  ((and (consp face)
 		(consp (car face))
 		(null  (cdr face))
@@ -1208,7 +1211,7 @@ and move to the line in the SGML document that caused it."
   (compilation-start command))
 
 (defsubst sgml-at-indentation-p ()
-  "Return true if point is at the first non-whitespace character on the line."
+  "Return t if point is at the first non-whitespace character on the line."
   (save-excursion
     (skip-chars-backward " \t")
     (bolp)))
@@ -1835,6 +1838,7 @@ This takes effect when first loading the library.")
       (define-key map "\C-cs" 'html-span))
     (define-key map "\C-c\C-s" 'html-autoview-mode)
     (define-key map "\C-c\C-v" 'browse-url-of-buffer)
+    (define-key map "\M-o" 'facemenu-keymap)
     map)
   "Keymap for commands for use in HTML mode.")
 
@@ -1867,6 +1871,7 @@ This takes effect when first loading the library.")
 (defvar html-face-tag-alist
   '((bold . "strong")
     (italic . "em")
+    (bold-italic . ("strong" "em"))
     (underline . "u")
     (mode-line . "rev"))
   "Value of `sgml-face-tag-alist' for HTML mode.")
@@ -2372,10 +2377,11 @@ can also view with a browser to see what happens:
 have <h1>Very Major Headlines</h1> through <h6>Very Minor Headlines</h6>
 <hr> Parts can be separated with horizontal rules.
 
-<p>Paragraphs only need an opening tag.  Line breaks and multiple spaces are
-ignored unless the text is <pre>preformatted.</pre>  Text can be marked as
-<strong>bold</strong>, <em>italic</em> or <u>underlined</u> using the normal M-o
-or Edit/Text Properties/Face commands.
+<p>Paragraphs only need an opening tag.  Line breaks and multiple
+spaces are ignored unless the text is <pre>preformatted.</pre>
+Text can be marked as <strong>bold</strong>, <em>italic</em> or
+<u>underlined</u> using the facemenu M-o or Edit/Text
+Properties/Face commands.
 
 Pages can have <a name=\"SOMENAME\">named points</a> and can link other points
 to them with <a href=\"#SOMENAME\">see also somename</a>.  In the same way <a
@@ -2614,7 +2620,7 @@ HTML Autoview mode is a buffer-local minor mode for use with
   "</nav>")
 
 (define-skeleton html-html5-template
-  "Initial HTML5 template"
+  "Initial HTML5 template."
   nil
   "<!DOCTYPE html>" \n
   "<html lang=\"en\">" \n

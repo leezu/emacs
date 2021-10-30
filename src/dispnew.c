@@ -3848,6 +3848,9 @@ gui_update_window_end (struct window *w, bool cursor_on_p,
 				w->output_cursor.hpos, w->output_cursor.vpos,
 				w->output_cursor.x, w->output_cursor.y);
 
+      if (cursor_in_mouse_face_p (w) && cursor_on_p)
+	mouse_face_overwritten_p = 1;
+
       if (draw_window_fringes (w, true))
 	{
 	  if (WINDOW_RIGHT_DIVIDER_WIDTH (w))
@@ -6717,7 +6720,7 @@ See `buffer-display-table' for more information.  */);
 
   DEFVAR_LISP ("tab-bar-position", Vtab_bar_position,
 	       doc: /* Specify on which side from the tool bar the tab bar shall be.
-Possible values are `t' (below the tool bar), `nil' (above the tool bar).
+Possible values are t (below the tool bar), nil (above the tool bar).
 This option affects only builds where the tool bar is not external.  */);
 
   pdumper_do_now_and_after_load (syms_of_display_for_pdumper);

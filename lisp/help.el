@@ -597,7 +597,7 @@ or a buffer name."
           (let ((inhibit-read-only t))
             (goto-char (point-min))
             (insert (substitute-command-keys
-                     (concat "\\<outline-mode-cycle-map>Type "
+                     (concat "\\<outline-minor-mode-cycle-map>Type "
                              "\\[outline-cycle] or \\[outline-cycle-buffer] "
                              "on headings to cycle their visibility.\n\n")))
             ;; Hide the longest body
@@ -677,9 +677,11 @@ If INSERT (the prefix arg) is non-nil, insert the message in the buffer."
 (defun help--binding-undefined-p (defn)
   (or (null defn) (integerp defn) (equal defn 'undefined)))
 
-(defun help--analyze-key (key untranslated)
+(defun help--analyze-key (key untranslated &optional buffer)
   "Get information about KEY its corresponding UNTRANSLATED events.
-Returns a list of the form (BRIEF-DESC DEFN EVENT MOUSE-MSG)."
+Returns a list of the form (BRIEF-DESC DEFN EVENT MOUSE-MSG).
+When BUFFER is nil, it defaults to the buffer displayed
+in the selected window."
   (if (numberp untranslated)
       (error "Missing `untranslated'!"))
   (let* ((event (when (> (length key) 0)
@@ -695,7 +697,18 @@ Returns a list of the form (BRIEF-DESC DEFN EVENT MOUSE-MSG)."
 	 (mouse-msg (if (or (memq 'click modifiers) (memq 'down modifiers)
 			    (memq 'drag modifiers))
                         " at that spot" ""))
-	 (defn (key-binding key t)))
+         ;; Use `mouse-set-point' to handle the case when a menu item
+         ;; is selected from the context menu that should describe KEY
+         ;; at the position of mouse click that opened the context menu.
+         ;; When no mouse was involved, don't use `mouse-set-point'.
+         (defn (if (or buffer
+                       ;; Clicks on the menu bar produce "event" that
+                       ;; is just '(menu-bar)', for which
+                       ;; `mouse-set-point' is not useful.
+                       (and (not (windowp (posn-window (event-start event))))
+                            (not (framep (posn-window (event-start event))))))
+                   (key-binding key t)
+                 (save-excursion (mouse-set-point event) (key-binding key t)))))
     ;; Handle the case where we faked an entry in "Select and Paste" menu.
     (when (and (eq defn nil)
 	       (stringp (aref key (1- (length key))))
@@ -725,7 +738,7 @@ Returns a list of the form (BRIEF-DESC DEFN EVENT MOUSE-MSG)."
    ;; If nothing left, then keep one (the last one).
    (last info-list)))
 
-(defun describe-key-briefly (&optional key-list insert untranslated)
+(defun describe-key-briefly (&optional key-list insert buffer)
   "Print the name of the functions KEY-LIST invokes.
 KEY-LIST is a list of pairs (SEQ . RAW-SEQ) of key sequences, where
 RAW-SEQ is the untranslated form of the key sequence SEQ.
@@ -733,8 +746,10 @@ If INSERT (the prefix arg) is non-nil, insert the message in the buffer.
 
 While reading KEY-LIST interactively, this command temporarily enables
 menu items or tool-bar buttons that are disabled to allow getting help
-on them."
-  (declare (advertised-calling-convention (key-list &optional insert) "27.1"))
+on them.
+
+BUFFER is the buffer in which to lookup those keys; it defaults to the
+current buffer."
   (interactive
    ;; Ignore mouse movement events because it's too easy to miss the
    ;; message while moving the mouse.
@@ -742,15 +757,13 @@ on them."
      `(,key-list ,current-prefix-arg)))
   (when (arrayp key-list)
     ;; Old calling convention, changed
-    (setq key-list (list (cons key-list
-                               (if (numberp untranslated)
-                                   (this-single-command-raw-keys)
-                                 untranslated)))))
-  (let* ((info-list (mapcar (lambda (kr)
-                              (help--analyze-key (car kr) (cdr kr)))
-                            key-list))
-         (msg (mapconcat #'car (help--filter-info-list info-list 1) "\n")))
-    (if insert (insert msg) (message "%s" msg))))
+    (setq key-list (list (cons key-list nil))))
+  (with-current-buffer (if (buffer-live-p buffer) buffer (current-buffer))
+    (let* ((info-list (mapcar (lambda (kr)
+                                (help--analyze-key (car kr) (cdr kr) buffer))
+                              key-list))
+           (msg (mapconcat #'car (help--filter-info-list info-list 1) "\n")))
+      (if insert (insert msg) (message "%s" msg)))))
 
 (defun help--key-binding-keymap (key &optional accept-default no-remap position)
   "Return a keymap holding a binding for KEY within current keymaps.
@@ -910,7 +923,7 @@ current buffer."
              (mapcar (lambda (x)
                        (pcase-let* ((`(,seq . ,raw-seq) x)
                                     (`(,brief-desc ,defn ,event ,_mouse-msg)
-                                     (help--analyze-key seq raw-seq))
+                                     (help--analyze-key seq raw-seq buffer))
                                     (locus
                                      (help--binding-locus
                                       seq (event-start event))))
@@ -952,8 +965,11 @@ current buffer."
 	    (describe-function-1 defn)))))))
 
 (defun search-forward-help-for-help ()
-  "Search forward \"help window\"."
+  "Search forward in the help-for-help window.
+This command is meant to be used after issuing the `C-h C-h' command."
   (interactive)
+  (unless (get-buffer help-for-help-buffer-name)
+    (error "No %s buffer; use `C-h C-h' first" help-for-help-buffer-name))
   ;; Move cursor to the "help window".
   (pop-to-buffer help-for-help-buffer-name)
   ;; Do incremental search forward.
@@ -1048,6 +1064,14 @@ is currently activated with completion."
     result))
 
 
+(defcustom help-link-key-to-documentation t
+  "Non-nil means link keys to their command in *Help* buffers.
+This affects \\\\=\\[command] substitutions in documentation
+strings done by `substitute-command-keys'."
+  :type 'boolean
+  :version "29.1"
+  :group 'help)
+
 (defun substitute-command-keys (string)
   "Substitute key descriptions for command names in STRING.
 Each substring of the form \\\\=[COMMAND] is replaced by either a
@@ -1135,7 +1159,14 @@ Otherwise, return a new string."
                         (delete-char 1))
                     ;; Function is on a key.
                     (delete-char (- end-point (point)))
-                    (insert (help--key-description-fontified key)))))
+                    (let ((key (help--key-description-fontified key)))
+                      (insert (if (and help-link-key-to-documentation
+                                       (functionp fun))
+                                  ;; The `fboundp' fixes bootstrap.
+                                  (if (fboundp 'help-mode--add-function-link)
+                                      (help-mode--add-function-link key fun)
+                                    key)
+                                key))))))
                ;; 1D. \{foo} is replaced with a summary of the keymap
                ;;            (symbol-value foo).
                ;;     \<foo> just sets the keymap used for \[cmd].
@@ -1589,10 +1620,16 @@ and some others."
       (add-hook 'temp-buffer-show-hook 'resize-temp-buffer-window 'append)
     (remove-hook 'temp-buffer-show-hook 'resize-temp-buffer-window)))
 
+(defvar resize-temp-buffer-window-inhibit nil
+  "Non-nil means `resize-temp-buffer-window' should not resize.")
+
 (defun resize-temp-buffer-window (&optional window)
   "Resize WINDOW to fit its contents.
 WINDOW must be a live window and defaults to the selected one.
-Do not resize if WINDOW was not created by `display-buffer'.
+Do not resize if WINDOW was not created by `display-buffer'.  Do
+not resize either if a `window-height', `window-width' or
+`window-size' entry in `display-buffer-alist' prescribes some
+alternative resizing for WINDOW's buffer.
 
 If WINDOW is part of a vertical combination, restrain its new
 size by `temp-buffer-max-height' and do not resize if its minimum
@@ -1607,27 +1644,33 @@ provided `fit-frame-to-buffer' is non-nil.
 This function may call `preserve-window-size' to preserve the
 size of WINDOW."
   (setq window (window-normalize-window window t))
-  (let ((height (if (functionp temp-buffer-max-height)
+  (let* ((buffer (window-buffer window))
+         (height (if (functionp temp-buffer-max-height)
+		     (with-selected-window window
+		       (funcall temp-buffer-max-height buffer))
+		   temp-buffer-max-height))
+	 (width (if (functionp temp-buffer-max-width)
 		    (with-selected-window window
-		      (funcall temp-buffer-max-height (window-buffer)))
-		  temp-buffer-max-height))
-	(width (if (functionp temp-buffer-max-width)
-		   (with-selected-window window
-		     (funcall temp-buffer-max-width (window-buffer)))
-		 temp-buffer-max-width))
-	(quit-cadr (cadr (window-parameter window 'quit-restore))))
-    ;; Resize WINDOW iff it was made by `display-buffer'.
+		      (funcall temp-buffer-max-width buffer))
+		  temp-buffer-max-width))
+	 (quit-cadr (cadr (window-parameter window 'quit-restore))))
+    ;; Resize WINDOW only if it was made by `display-buffer'.
     (when (or (and (eq quit-cadr 'window)
 		   (or (and (window-combined-p window)
 			    (not (eq fit-window-to-buffer-horizontally
 				     'only))
-			    (pos-visible-in-window-p (point-min) window))
+			    (pos-visible-in-window-p
+                             (with-current-buffer buffer (point-min))
+                             window)
+                            (not resize-temp-buffer-window-inhibit))
 		       (and (window-combined-p window t)
-			    fit-window-to-buffer-horizontally)))
+			    fit-window-to-buffer-horizontally
+                            (not resize-temp-buffer-window-inhibit))))
 	      (and (eq quit-cadr 'frame)
                    fit-frame-to-buffer
-                   (eq window (frame-root-window window))))
-	(fit-window-to-buffer window height nil width nil t))))
+                   (eq window (frame-root-window window))
+                   (not resize-temp-buffer-window-inhibit)))
+      (fit-window-to-buffer window height nil width nil t))))
 
 ;;; Help windows.
 (defcustom help-window-select nil
@@ -1912,7 +1955,7 @@ the same names as used in the original source code, when possible."
                            (let ((name (symbol-name arg)))
                              (if (eq (aref name 0) ?&)
                                  (memq arg '(&rest &optional))
-                               (not (string-match "\\." name)))))
+                               (not (string-search "." name)))))
                 (setq valid nil)))
             (when valid arglist)))
         (let* ((arity (func-arity def))
